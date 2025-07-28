@@ -41,7 +41,7 @@ func (c *CLI) Run() error {
 
 	// TODO: Implement subtitle search and download logic
 	fmt.Println("\n[TODO] Core subtitle search and download logic not yet implemented")
-	
+
 	return nil
 }
 
@@ -63,7 +63,7 @@ func (c *CLI) printVersionInfo() {
 
 func (c *CLI) validateArguments() error {
 	var results []*ValidationResult
-	
+
 	if c.Search == "" {
 		result, err := c.validatePath()
 		if err != nil {
@@ -133,7 +133,7 @@ var mediaExtensions = map[string]bool{
 
 func (c *CLI) validatePath() (*ValidationResult, error) {
 	cleanPath := filepath.Clean(c.Path)
-	
+
 	absPath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path '%s': %w", c.Path, err)
@@ -150,12 +150,12 @@ func (c *CLI) validatePath() (*ValidationResult, error) {
 	c.Path = absPath
 
 	result := &ValidationResult{Success: true}
-	
+
 	if info.IsDir() {
 		result.Message = fmt.Sprintf("Directory path validated: %s", c.Path)
 	} else {
 		result.Message = fmt.Sprintf("File path validated: %s", c.Path)
-		
+
 		ext := strings.ToLower(filepath.Ext(c.Path))
 		if !mediaExtensions[ext] && ext != "" {
 			result.Warning = fmt.Sprintf("File extension '%s' may not be a supported media format", ext)
@@ -171,7 +171,7 @@ func (c *CLI) validateLanguages() (*ValidationResult, error) {
 	}
 
 	validLanguages := make([]string, 0, len(c.Language))
-	
+
 	for _, lang := range c.Language {
 		lang = strings.TrimSpace(lang)
 		if lang == "" {
@@ -223,12 +223,12 @@ func (c *CLI) validateConfigFile() (*ValidationResult, error) {
 func (c *CLI) validateModeConsistency() (*ValidationResult, error) {
 	result := &ValidationResult{Success: true}
 	var messages []string
-	
+
 	if c.Search != "" {
 		if c.Path != "." {
 			messages = append(messages, fmt.Sprintf("Manual search mode enabled: path argument '%s' will be ignored", c.Path))
 		}
-		
+
 		if strings.TrimSpace(c.Search) == "" {
 			return nil, fmt.Errorf("search query cannot be empty when using search mode")
 		}
@@ -251,7 +251,7 @@ func (c *CLI) validateModeConsistency() (*ValidationResult, error) {
 
 func (c *CLI) displayConfiguration() {
 	fmt.Println("\n--- Configuration ---")
-	
+
 	if c.Search != "" {
 		fmt.Printf("Mode: Manual search\n")
 		fmt.Printf("Search query: %s\n", c.Search)
@@ -259,11 +259,11 @@ func (c *CLI) displayConfiguration() {
 		fmt.Printf("Mode: Path-based search\n")
 		fmt.Printf("Target path: %s\n", c.Path)
 	}
-	
+
 	fmt.Printf("Languages: %v\n", c.Language)
 	fmt.Printf("Interactive: %t\n", c.Interactive)
 	fmt.Printf("Dry run: %t\n", c.DryRun)
-	
+
 	if c.Config != "" {
 		fmt.Printf("Config file: %s\n", c.Config)
 	} else {
@@ -273,7 +273,7 @@ func (c *CLI) displayConfiguration() {
 
 func isValidLanguageCode(code string) bool {
 	code = strings.ToLower(code)
-	
+
 	if len(code) == 2 || len(code) == 3 {
 		for _, r := range code {
 			if r < 'a' || r > 'z' {
@@ -282,26 +282,26 @@ func isValidLanguageCode(code string) bool {
 		}
 		return true
 	}
-	
+
 	if len(code) == 5 && code[2] == '-' {
 		firstPart := code[:2]
 		secondPart := code[3:]
-		
+
 		for _, r := range firstPart {
 			if r < 'a' || r > 'z' {
 				return false
 			}
 		}
-		
+
 		for _, r := range secondPart {
 			if r < 'a' || r > 'z' {
 				return false
 			}
 		}
-		
+
 		return true
 	}
-	
+
 	return false
 }
 
