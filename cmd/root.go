@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/carlosarraes/subs-cli/internal/parser"
+	"github.com/carlosarraes/subs-cli/pkg/models"
 )
 
 var (
@@ -39,8 +41,11 @@ func (c *CLI) Run() error {
 
 	c.displayConfiguration()
 
-	// TODO: Implement subtitle search and download logic
-	fmt.Println("\n[TODO] Core subtitle search and download logic not yet implemented")
+	parser := parser.New()
+
+	if err := c.processMediaFiles(parser); err != nil {
+		return fmt.Errorf("failed to process media files: %w", err)
+	}
 
 	return nil
 }
@@ -303,6 +308,102 @@ func isValidLanguageCode(code string) bool {
 	}
 
 	return false
+}
+
+func (c *CLI) processMediaFiles(p *parser.Parser) error {
+	info, err := os.Stat(c.Path)
+	if err != nil {
+		return fmt.Errorf("cannot access path: %w", err)
+	}
+
+	fmt.Println("\n--- Media File Processing ---")
+
+	if info.IsDir() {
+		return c.processDirectory(p)
+	} else {
+		return c.processFile(p, c.Path)
+	}
+}
+
+func (c *CLI) processDirectory(p *parser.Parser) error {
+	entries, err := os.ReadDir(c.Path)
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	mediaFiles := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filename := entry.Name()
+		ext := strings.ToLower(filepath.Ext(filename))
+		if mediaExtensions[ext] {
+			mediaFiles = append(mediaFiles, filepath.Join(c.Path, filename))
+		}
+	}
+
+	if len(mediaFiles) == 0 {
+		fmt.Printf("No media files found in directory: %s\n", c.Path)
+		return nil
+	}
+
+	fmt.Printf("Found %d media file(s) in directory\n", len(mediaFiles))
+
+	for _, file := range mediaFiles {
+		if err := c.processFile(p, file); err != nil {
+			fmt.Printf("Error processing %s: %v\n", filepath.Base(file), err)
+			continue
+		}
+	}
+
+	return nil
+}
+
+func (c *CLI) processFile(p *parser.Parser, filePath string) error {
+	filename := filepath.Base(filePath)
+	fmt.Printf("\nProcessing: %s\n", filename)
+
+	mediaInfo, err := p.Parse(filename)
+	if err != nil {
+		fmt.Printf("  ❌ Failed to parse filename: %v\n", err)
+		return nil
+	}
+
+	c.displayMediaInfo(mediaInfo)
+
+	// TODO: Search for subtitles using mediaInfo
+	fmt.Printf("  📝 Next: Search for %s subtitles\n", strings.Join(c.Language, ", "))
+
+	return nil
+}
+
+func (c *CLI) displayMediaInfo(info *models.MediaInfo) {
+	fmt.Printf("  ✅ Parsed successfully:\n")
+	fmt.Printf("     Title: %s\n", info.Title)
+
+	if info.Year != "" {
+		fmt.Printf("     Year: %s\n", info.Year)
+	}
+
+	if info.IsEpisode() {
+		fmt.Printf("     Season: %d, Episode: %d\n", info.Season, info.Episode)
+	}
+
+	if info.Quality != "" {
+		fmt.Printf("     Quality: %s\n", info.Quality)
+	}
+
+	if info.Source != "" {
+		fmt.Printf("     Source: %s\n", info.Source)
+	}
+
+	if info.Codec != "" {
+		fmt.Printf("     Codec: %s\n", info.Codec)
+	}
+
+	fmt.Printf("     Type: %s\n", info.Type)
 }
 
 func Execute() {
