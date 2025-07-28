@@ -62,73 +62,112 @@ func (c *CLI) printVersionInfo() {
 }
 
 func (c *CLI) validateArguments() error {
+	var results []*ValidationResult
+	
 	if c.Search == "" {
-		if err := c.validatePath(); err != nil {
+		result, err := c.validatePath()
+		if err != nil {
 			return err
 		}
+		results = append(results, result)
 	}
 
-	if err := c.validateLanguages(); err != nil {
+	langResult, err := c.validateLanguages()
+	if err != nil {
 		return err
 	}
+	results = append(results, langResult)
 
 	if c.Config != "" {
-		if err := c.validateConfigFile(); err != nil {
+		configResult, err := c.validateConfigFile()
+		if err != nil {
 			return err
 		}
+		results = append(results, configResult)
 	}
 
-	if err := c.validateModeConsistency(); err != nil {
+	modeResult, err := c.validateModeConsistency()
+	if err != nil {
 		return err
 	}
+	results = append(results, modeResult)
+
+	c.printValidationResults(results)
 
 	return nil
 }
 
-func (c *CLI) validatePath() error {
+func (c *CLI) printValidationResults(results []*ValidationResult) {
+	for _, result := range results {
+		if result.Success && result.Message != "" {
+			fmt.Printf("✓ %s\n", result.Message)
+		}
+		if result.Warning != "" {
+			fmt.Printf("⚠ Warning: %s\n", result.Warning)
+		}
+		if result.Message != "" && !result.Success {
+			fmt.Printf("ℹ %s\n", result.Message)
+		}
+	}
+}
+
+type ValidationResult struct {
+	Success bool
+	Message string
+	Warning string
+}
+
+var mediaExtensions = map[string]bool{
+	".mp4":  true,
+	".mkv":  true,
+	".avi":  true,
+	".mov":  true,
+	".wmv":  true,
+	".flv":  true,
+	".webm": true,
+	".m4v":  true,
+	".mpg":  true,
+	".mpeg": true,
+	".3gp":  true,
+}
+
+func (c *CLI) validatePath() (*ValidationResult, error) {
 	cleanPath := filepath.Clean(c.Path)
 	
 	absPath, err := filepath.Abs(cleanPath)
 	if err != nil {
-		return fmt.Errorf("invalid path '%s': %w", c.Path, err)
+		return nil, fmt.Errorf("invalid path '%s': %w", c.Path, err)
 	}
 
 	info, err := os.Stat(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("path does not exist: %s", absPath)
+			return nil, fmt.Errorf("path does not exist: %s", absPath)
 		}
-		return fmt.Errorf("cannot access path '%s': %w", absPath, err)
+		return nil, fmt.Errorf("cannot access path '%s': %w", absPath, err)
 	}
 
 	c.Path = absPath
 
+	result := &ValidationResult{Success: true}
+	
 	if info.IsDir() {
-		fmt.Printf("✓ Directory path validated: %s\n", c.Path)
+		result.Message = fmt.Sprintf("Directory path validated: %s", c.Path)
 	} else {
-		fmt.Printf("✓ File path validated: %s\n", c.Path)
+		result.Message = fmt.Sprintf("File path validated: %s", c.Path)
 		
 		ext := strings.ToLower(filepath.Ext(c.Path))
-		mediaExtensions := []string{".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".mpg", ".mpeg", ".3gp"}
-		isMediaFile := false
-		for _, mediaExt := range mediaExtensions {
-			if ext == mediaExt {
-				isMediaFile = true
-				break
-			}
-		}
-		
-		if !isMediaFile && ext != "" {
-			fmt.Printf("⚠ Warning: File extension '%s' may not be a supported media format\n", ext)
+		if !mediaExtensions[ext] && ext != "" {
+			result.Warning = fmt.Sprintf("File extension '%s' may not be a supported media format", ext)
 		}
 	}
 
-	return nil
+	return result, nil
 }
 
-func (c *CLI) validateLanguages() error {
+func (c *CLI) validateLanguages() (*ValidationResult, error) {
 	if len(c.Language) == 0 {
-		return fmt.Errorf("at least one language must be specified")
+		return nil, fmt.Errorf("at least one language must be specified")
 	}
 
 	validLanguages := make([]string, 0, len(c.Language))
@@ -140,63 +179,74 @@ func (c *CLI) validateLanguages() error {
 		}
 
 		if len(lang) < 2 || len(lang) > 5 {
-			return fmt.Errorf("invalid language code '%s': must be 2-5 characters (e.g., 'en', 'pt-BR')", lang)
+			return nil, fmt.Errorf("invalid language code '%s': must be 2-5 characters (e.g., 'en', 'pt-BR')", lang)
 		}
 
 		if !isValidLanguageCode(lang) {
-			return fmt.Errorf("invalid language code format '%s': expected format like 'en' or 'pt-BR'", lang)
+			return nil, fmt.Errorf("invalid language code format '%s': expected format like 'en' or 'pt-BR'", lang)
 		}
 
 		validLanguages = append(validLanguages, lang)
 	}
 
 	if len(validLanguages) == 0 {
-		return fmt.Errorf("no valid language codes provided")
+		return nil, fmt.Errorf("no valid language codes provided")
 	}
 
 	c.Language = validLanguages
-	fmt.Printf("✓ Language codes validated: %v\n", c.Language)
-	return nil
+	return &ValidationResult{
+		Success: true,
+		Message: fmt.Sprintf("Language codes validated: %v", c.Language),
+	}, nil
 }
 
-func (c *CLI) validateConfigFile() error {
+func (c *CLI) validateConfigFile() (*ValidationResult, error) {
 	absPath, err := filepath.Abs(c.Config)
 	if err != nil {
-		return fmt.Errorf("invalid config file path '%s': %w", c.Config, err)
+		return nil, fmt.Errorf("invalid config file path '%s': %w", c.Config, err)
 	}
 
 	if _, err := os.Stat(absPath); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("config file does not exist: %s", absPath)
+			return nil, fmt.Errorf("config file does not exist: %s", absPath)
 		}
-		return fmt.Errorf("cannot access config file '%s': %w", absPath, err)
+		return nil, fmt.Errorf("cannot access config file '%s': %w", absPath, err)
 	}
 
 	c.Config = absPath
-	fmt.Printf("✓ Config file validated: %s\n", c.Config)
-	return nil
+	return &ValidationResult{
+		Success: true,
+		Message: fmt.Sprintf("Config file validated: %s", c.Config),
+	}, nil
 }
 
-func (c *CLI) validateModeConsistency() error {
+func (c *CLI) validateModeConsistency() (*ValidationResult, error) {
+	result := &ValidationResult{Success: true}
+	var messages []string
+	
 	if c.Search != "" {
 		if c.Path != "." {
-			fmt.Printf("ℹ Manual search mode enabled: path argument '%s' will be ignored\n", c.Path)
+			messages = append(messages, fmt.Sprintf("Manual search mode enabled: path argument '%s' will be ignored", c.Path))
 		}
 		
 		if strings.TrimSpace(c.Search) == "" {
-			return fmt.Errorf("search query cannot be empty when using search mode")
+			return nil, fmt.Errorf("search query cannot be empty when using search mode")
 		}
 	}
 
 	if c.Interactive {
-		fmt.Println("ℹ Interactive mode enabled: you'll be able to select from multiple subtitle options")
+		messages = append(messages, "Interactive mode enabled: you'll be able to select from multiple subtitle options")
 	}
 
 	if c.DryRun {
-		fmt.Println("ℹ Dry run mode: no files will be downloaded, only preview what would happen")
+		messages = append(messages, "Dry run mode: no files will be downloaded, only preview what would happen")
 	}
 
-	return nil
+	if len(messages) > 0 {
+		result.Message = strings.Join(messages, "\n")
+	}
+
+	return result, nil
 }
 
 func (c *CLI) displayConfiguration() {
