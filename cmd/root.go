@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alecthomas/kong"
+	"github.com/carlosarraes/subs-cli/internal/api"
 	"github.com/carlosarraes/subs-cli/internal/parser"
 	"github.com/carlosarraes/subs-cli/pkg/models"
 )
@@ -373,8 +377,10 @@ func (c *CLI) processFile(p *parser.Parser, filePath string) error {
 
 	c.displayMediaInfo(mediaInfo)
 
-	// TODO: Search for subtitles using mediaInfo
-	fmt.Printf("  📝 Next: Search for %s subtitles\n", strings.Join(c.Language, ", "))
+	if err := c.searchAndDisplaySubtitles(mediaInfo); err != nil {
+		fmt.Printf("  ❌ Subtitle search failed: %v\n", err)
+		return nil
+	}
 
 	return nil
 }
@@ -404,6 +410,109 @@ func (c *CLI) displayMediaInfo(info *models.MediaInfo) {
 	}
 
 	fmt.Printf("     Type: %s\n", info.Type)
+}
+
+func (c *CLI) searchAndDisplaySubtitles(mediaInfo *models.MediaInfo) error {
+	config := &api.Config{
+		// TODO: Get credentials from config file or environment variables
+		Username: "demo",
+		Password: "demo",
+	}
+	
+	client := api.NewOpenSubtitlesClient(config)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	searchParams := c.createSearchParams(mediaInfo)
+	
+	fmt.Printf("  🔍 Searching for subtitles...\n")
+	
+	allSubtitles := make([]*models.Subtitle, 0)
+	for _, language := range c.Language {
+		searchParams.Language = language
+		subtitles, err := client.Search(ctx, searchParams)
+		if err != nil {
+			fmt.Printf("    ⚠ Failed to search for %s subtitles: %v\n", language, err)
+			continue
+		}
+		
+		fmt.Printf("    ✅ Found %d %s subtitle(s)\n", len(subtitles), language)
+		allSubtitles = append(allSubtitles, subtitles...)
+	}
+	
+	if len(allSubtitles) == 0 {
+		fmt.Printf("  ❌ No subtitles found for %s\n", mediaInfo.GetDisplayTitle())
+		return nil
+	}
+	
+	c.displaySubtitleList(allSubtitles)
+	return nil
+}
+
+func (c *CLI) createSearchParams(mediaInfo *models.MediaInfo) *models.SearchParams {
+	params := &models.SearchParams{
+		Query: mediaInfo.Title,
+		Type:  "movie",
+	}
+	
+	if mediaInfo.IsEpisode() {
+		params.Type = "episode"
+		params.Season = mediaInfo.Season
+		params.Episode = mediaInfo.Episode
+	}
+	
+	if mediaInfo.Year != "" {
+		if year, err := strconv.Atoi(mediaInfo.Year); err == nil {
+			params.Year = year
+		}
+	}
+	
+	return params
+}
+
+func (c *CLI) displaySubtitleList(subtitles []*models.Subtitle) {
+	fmt.Printf("\n  📺 Available Subtitles:\n")
+	fmt.Printf("  %-4s %-8s %-40s %-15s %-8s %-10s\n",
+		"#", "Language", "Release Name", "Uploader", "Rating", "Downloads")
+	fmt.Printf("  %s\n", strings.Repeat("-", 85))
+	
+	for i, subtitle := range subtitles {
+		releaseName := subtitle.ReleaseName
+		if len(releaseName) > 40 {
+			releaseName = releaseName[:37] + "..."
+		}
+		
+		ratingStr := "N/A"
+		if subtitle.Rating > 0 {
+			ratingStr = fmt.Sprintf("%.1f", subtitle.Rating)
+		}
+		
+		downloadsStr := fmt.Sprintf("%d", subtitle.Downloads)
+		if subtitle.Downloads >= 1000 {
+			downloadsStr = fmt.Sprintf("%.1fk", float64(subtitle.Downloads)/1000)
+		}
+		
+		fmt.Printf("  %-4d %-8s %-40s %-15s %-8s %-10s\n",
+			i+1,
+			subtitle.Language,
+			releaseName,
+			c.truncateString(subtitle.Uploader, 15),
+			ratingStr,
+			downloadsStr)
+	}
+	
+	if c.DryRun {
+		fmt.Printf("\n  💡 Dry run mode: no files downloaded. Use without --dry-run to download subtitles.\n")
+	} else {
+		fmt.Printf("\n  💾 Ready to download. (Download functionality will be implemented next.)\n")
+	}
+}
+
+func (c *CLI) truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
 
 func Execute() {
